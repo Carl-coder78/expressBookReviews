@@ -1,8 +1,10 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const session = require('express-session');
-const fs = require('fs');  // Añadir el módulo fs para escribir en el archivo
-let books = require('./router/booksdb.js');  // Asegúrate de que esta ruta es correcta
+const fs = require('fs');
+let books = require('./router/booksdb.js');
+let public_users = require('./router/general.js').general;
+let auth_users = require('./router/auth_users.js').authenticated;
 
 const app = express();
 
@@ -43,107 +45,50 @@ app.use("/customer/auth/*", function auth(req, res, next) {
   }
 });
 
-// Ruta para registrar un nuevo usuario
-app.post("/register", (req, res) => {
-  const { username, password } = req.body;
+// Usar el enrutador público
+app.use("/", public_users);
 
-  if (!username || !password) {
-    return res.status(400).json({ message: "Nombre de usuario y contraseña son requeridos" });
-  }
+// Usar el enrutador de usuarios autenticados
+app.use("/auth", auth_users);
 
-  if (users.some(user => user.username === username)) {
-    return res.status(409).json({ message: "El nombre de usuario ya existe" });
-  }
-
-  users.push({ username, password });
-  return res.status(201).json({ message: "Usuario registrado con éxito" });
+// Ruta para obtener libros
+app.get('/books', (req, res) => {
+  res.status(200).json(books);
 });
 
-// Ruta para iniciar sesión
-app.post("/customer/login", (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) { // Corrección aquí
-    return res.status(400).json({ message: "Nombre de usuario y contraseña son requeridos" });
-  }
-
-  if (authenticatedUser(username, password)) {
-    const accessToken = jwt.sign({ username: username }, 'fingerprint_customer', { expiresIn: '1h' });
-    req.session.token = accessToken;
-    return res.status(200).json({ message: "Inicio de sesión exitoso", token: accessToken });
-  } else {
-    return res.status(401).json({ message: "Nombre de usuario o contraseña incorrectos" });
-  }
-});
-
-// Ruta para agregar o modificar una reseña de un libro
-app.put("/customer/auth/review/:isbn", (req, res) => {
-  const isbn = req.params.isbn;
-  const { review } = req.body;
-  const username = req.user.username;
-
-  if (!review) {
-    return res.status(400).json({ message: "Se requiere una reseña" });
-  }
-
-  const book = books[isbn];
-  if (!book) {
-    return res.status(404).json({ message: "Libro no encontrado" });
-  }
-
-  if (!book.reviews) {
-    book.reviews = {};
-  }
-
-  book.reviews[username] = review; // Guardando la reseña en el campo correcto 'reviews'
-  
-  // Guardar la variable 'books' en el archivo 'booksdb.js'
-  fs.writeFile('./router/booksdb.js', 'let books = ' + JSON.stringify(books, null, 2) + ';\n\nmodule.exports = books;', (err) => {
-    if (err) {
-      return res.status(500).json({ message: "Error al guardar la reseña" });
-    }
-
-    return res.status(200).json({ message: "Reseña agregada/modificada con éxito" });
-  });
-});
-
-// Ruta para eliminar una reseña de un libro
-app.delete("/customer/auth/review/:isbn", (req, res) => {
-  const isbn = req.params.isbn;
-  const username = req.user.username;
-
-  const book = books[isbn];
-  if (!book || !book.reviews || !book.reviews[username]) {
-    return res.status(404).json({ message: "Reseña no encontrada" });
-  }
-
-  delete book.reviews[username]; // Eliminar la reseña
-
-  // Guardar la variable 'books' en el archivo 'booksdb.js'
-  fs.writeFile('./router/booksdb.js', 'let books = ' + JSON.stringify(books, null, 2) + ';\n\nmodule.exports = books;', (err) => {
-    if (err) {
-      return res.status(500).json({ message: "Error al eliminar la reseña" });
-    }
-
-    return res.status(200).json({ message: "Reseña eliminada con éxito" });
-  });
-});
-
-// Nueva ruta para obtener las reseñas de un libro
-app.get("/review/:isbn", (req, res) => {
+// Ruta para obtener detalles de libros basado en ISBN
+app.get('/books/:isbn', (req, res) => {
   const isbn = req.params.isbn;
   const book = books[isbn];
   if (book) {
-    res.status(200).json(book.reviews);
+    res.status(200).json(book);
   } else {
     res.status(404).json({ message: "Libro no encontrado" });
   }
 });
 
-// Ruta para obtener la lista de usuarios registrados
-app.get("/users", (req, res) => {
-  return res.status(200).json(users);
+// Ruta para obtener detalles de libros basado en el autor
+app.get('/books/author/:author', (req, res) => {
+  const author = req.params.author;
+  const booksByAuthor = Object.values(books).filter(book => book.author.toLowerCase() === author.toLowerCase());
+  if (booksByAuthor.length > 0) {
+    res.status(200).json(booksByAuthor);
+  } else {
+    res.status(404).json({ message: "Libros no encontrados para el autor especificado" });
+  }
 });
 
+// Ruta para obtener detalles de libros basado en el título
+app.get('/books/title/:title', (req, res) => {
+  const title = req.params.title;
+  const booksByTitle = Object.values(books).filter(book => book.title.toLowerCase() === title.toLowerCase());
+  if (booksByTitle.length > 0) {
+    res.status(200).json(booksByTitle);
+  } else {
+    res.status(404).json({ message: "Libros no encontrados para el título especificado" });
+  }
+});
+
+// Puerto de escucha del servidor
 const PORT = 5000;
 app.listen(PORT, () => console.log("Server is running at port " + PORT));
